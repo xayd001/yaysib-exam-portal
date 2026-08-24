@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import questionsData from './data/questions.json';
 import logoImg from './assets/YCB.jpg'; 
 
+const adminUsername = import.meta.env.VITE_ADMIN_USER;
+const adminPassword = import.meta.env.VITE_ADMIN_PASS;
+
 const shuffleArray = (array) => {
   const arr = [...array];
   for (let i = arr.length - 1; i > 0; i--) {
@@ -40,11 +43,29 @@ export default function App() {
   const [unlockedResult, setUnlockedResult] = useState(null);
   const [resultError, setResultError] = useState('');
 
-  // Roster Data
-  const [registeredResults, setRegisteredResults] = useState([
-    { id: 'YCB-2026-001', name: 'Zayd Ibn Mukhtar', mgmt: 48, prog: 44, project: 0, total: 92, token: 'TK-8891', completed: true },
-    { id: 'YCB-2026-002', name: 'Aisha Hassan', mgmt: 42, prog: 40, project: 0, total: 82, token: 'TK-3341', completed: true }
-  ]);
+  // Roster Data with LocalStorage Persistence
+  const [registeredResults, setRegisteredResults] = useState(() => {
+    const saved = localStorage.getItem('yaysib_roster');
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) { console.error(e); }
+    }
+    return [
+      { id: 'YCB-2026-001', name: 'Zayd Ibn Mukhtar', mgmt: 48, prog: 44, project: 0, total: 92, token: 'TK-8891', completed: true },
+      { id: 'YCB-2026-002', name: 'Aisha Hassan', mgmt: 42, prog: 40, project: 0, total: 82, token: 'TK-3341', completed: true }
+    ];
+  });
+
+  useEffect(() => {
+    localStorage.setItem('yaysib_roster', JSON.stringify(registeredResults));
+  }, [registeredResults]);
+
+  // Handle navigation and require re-authentication for Admin view when moving away
+  const handleNavClick = (targetView) => {
+    if (view === 'admin' && targetView !== 'admin') {
+      setIsAdminAuthenticated(false);
+    }
+    setView(targetView);
+  };
 
   const handleStartExam = (e) => {
     e.preventDefault();
@@ -135,15 +156,15 @@ export default function App() {
     alert(`Exam Submitted (${reason})\n\nCandidate: ${record.name}\nTotal Score: ${totalScore}/100\nToken: ${generatedToken}`);
   };
 
-  const handleAdminLogin = (e) => {
-    e.preventDefault();
-    if (adminCreds.username === 'zaydibnmukhtar01@gmail.co' && adminCreds.password === 'Iayd/002') {
-      setIsAdminAuthenticated(true);
-      setAdminError('');
-    } else {
-      setAdminError('Invalid Credentials.');
-    }
-  };
+ const handleAdminLogin = (e) => {
+  e.preventDefault();
+  if (adminCreds.username === adminUsername && adminCreds.password === adminPassword) {
+    setIsAdminAuthenticated(true);
+    setAdminError('');
+  } else {
+    setAdminError('Invalid Credentials.');
+  }
+};
 
   const handleVerifyResult = (e) => {
     e.preventDefault();
@@ -200,9 +221,9 @@ export default function App() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: '10px' }}>
-          <button onClick={() => setView('login')} style={navBtnStyle(view === 'login')}>Student Portal</button>
-          <button onClick={() => setView('result')} style={navBtnStyle(view === 'result')}>Check Result</button>
-          <button onClick={() => setView('admin')} style={{ ...navBtnStyle(view === 'admin'), background: '#1d4ed8', color: '#ffffff' }}>Admin Console</button>
+          <button onClick={() => handleNavClick('login')} style={navBtnStyle(view === 'login')}>Student Portal</button>
+          <button onClick={() => handleNavClick('result')} style={navBtnStyle(view === 'result')}>Check Result</button>
+          <button onClick={() => handleNavClick('admin')} style={{ ...navBtnStyle(view === 'admin'), background: '#1d4ed8', color: '#ffffff' }}>Admin Console</button>
         </div>
       </header>
 
@@ -447,7 +468,7 @@ export default function App() {
                     <td style={{ borderRight: '1.5px solid #000000', padding: '12px 10px' }}>ACCESS PROGRAMMING</td>
                     <td style={{ padding: '12px 10px', textAlign: 'center', fontWeight: 'bold' }}>{getGrade(unlockedResult.prog * 2)}</td>
                   </tr>
-                  <tr style={{ borderBottom: '1.5px solid #000000' }}>
+                  <tr style={{ borderBottom: '1px solid #000000' }}>
                     <td style={{ borderRight: '1.5px solid #000000', padding: '12px 10px' }}>PROJECTS</td>
                     <td style={{ padding: '12px 10px', textAlign: 'center', fontWeight: 'bold' }}>F</td>
                   </tr>
@@ -512,9 +533,47 @@ function AdminPanel({ registeredResults, setRegisteredResults }) {
 
   const handleAddStudent = (e) => {
     e.preventDefault();
+    const cleanID = newStudent.id.trim().toUpperCase();
+    
+    if (registeredResults.some(s => s.id === cleanID)) {
+      alert("Candidate ID already exists!");
+      return;
+    }
+
     const generatedToken = 'TK-' + Math.floor(1000 + Math.random() * 9000);
-    setRegisteredResults([...registeredResults, { id: newStudent.id.trim().toUpperCase(), name: newStudent.name.trim(), mgmt: 0, prog: 0, project: 0, total: 0, token: generatedToken, completed: false }]);
+    const candidateRecord = {
+      id: cleanID,
+      name: newStudent.name.trim(),
+      mgmt: 0,
+      prog: 0,
+      project: 0,
+      total: 0,
+      token: generatedToken,
+      completed: false
+    };
+
+    setRegisteredResults((prev) => [...prev, candidateRecord]);
     setNewStudent({ name: '', id: '' });
+  };
+
+  const handleScoreChange = (id, field, val) => {
+    const numVal = Math.min(50, Math.max(0, Number(val) || 0));
+    setRegisteredResults((prev) =>
+      prev.map((st) => {
+        if (st.id === id) {
+          const updated = { ...st, [field]: numVal };
+          updated.total = updated.mgmt + updated.prog + updated.project;
+          return updated;
+        }
+        return st;
+      })
+    );
+  };
+
+  const toggleSubmitStatus = (id) => {
+    setRegisteredResults((prev) =>
+      prev.map((st) => (st.id === id ? { ...st, completed: !st.completed } : st))
+    );
   };
 
   const exportToExcel = () => {
@@ -532,12 +591,12 @@ function AdminPanel({ registeredResults, setRegisteredResults }) {
   };
 
   return (
-    <div style={{ maxWidth: '1000px', margin: '30px auto', padding: '0 20px' }}>
+    <div style={{ maxWidth: '1050px', margin: '30px auto', padding: '0 20px' }}>
       <div style={{ ...glassCardStyle, maxWidth: '100%' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
           <div>
             <h2 style={{ margin: 0, color: '#f8fafc' }}>Admin Control & Student Roster</h2>
-            <p style={{ margin: 0, color: '#94a3b8', fontSize: '0.85rem' }}>Register candidates, monitor result tokens, and export mark sheets.</p>
+            <p style={{ margin: 0, color: '#94a3b8', fontSize: '0.85rem' }}>Register candidates, modify marks, submit exams, and grant result access.</p>
           </div>
           <button onClick={exportToExcel} style={{ ...primaryBtnStyle, background: '#2563eb', padding: '10px 18px', width: 'auto' }}>
             📊 Export CSV / Excel
@@ -546,7 +605,7 @@ function AdminPanel({ registeredResults, setRegisteredResults }) {
 
         <form onSubmit={handleAddStudent} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '12px', marginBottom: '24px', background: '#0f172a', padding: '16px', borderRadius: '10px', border: '1px solid #1e293b' }}>
           <input type="text" placeholder="Candidate Full Name" required value={newStudent.name} onChange={(e) => setNewStudent({...newStudent, name: e.target.value})} style={modernInputStyle} />
-          <input type="text" placeholder="Student ID Number" required value={newStudent.id} onChange={(e) => setNewStudent({...newStudent, id: e.target.value})} style={modernInputStyle} />
+          <input type="text" placeholder="Student ID (e.g. YCB-2026-003)" required value={newStudent.id} onChange={(e) => setNewStudent({...newStudent, id: e.target.value})} style={modernInputStyle} />
           <button type="submit" style={{ ...primaryBtnStyle, width: 'auto', background: '#16a34a', whiteSpace: 'nowrap' }}>+ Pre-Register Candidate</button>
         </form>
 
@@ -556,12 +615,12 @@ function AdminPanel({ registeredResults, setRegisteredResults }) {
               <tr style={{ background: '#0f172a', color: '#94a3b8', fontSize: '0.82rem', textTransform: 'uppercase' }}>
                 <th style={thStyle}>Student ID</th>
                 <th style={thStyle}>Full Name</th>
-                <th style={thStyle}>Mgmt</th>
-                <th style={thStyle}>Prog</th>
-                <th style={thStyle}>Project</th>
+                <th style={thStyle}>Mgmt (50)</th>
+                <th style={thStyle}>Prog (50)</th>
                 <th style={thStyle}>Total</th>
                 <th style={thStyle}>Token</th>
                 <th style={thStyle}>Status</th>
+                <th style={thStyle}>Action</th>
               </tr>
             </thead>
             <tbody>
@@ -569,15 +628,23 @@ function AdminPanel({ registeredResults, setRegisteredResults }) {
                 <tr key={st.id} style={{ borderBottom: '1px solid #1e293b' }}>
                   <td style={tdStyle}><strong style={{ color: '#f8fafc' }}>{st.id}</strong></td>
                   <td style={{ ...tdStyle, color: '#cbd5e1' }}>{st.name}</td>
-                  <td style={{ ...tdStyle, color: '#cbd5e1' }}>{st.mgmt}</td>
-                  <td style={{ ...tdStyle, color: '#cbd5e1' }}>{st.prog}</td>
-                  <td style={{ ...tdStyle, color: '#f87171' }}>{st.project}</td>
+                  <td style={tdStyle}>
+                    <input type="number" min="0" max="50" value={st.mgmt} onChange={(e) => handleScoreChange(st.id, 'mgmt', e.target.value)} style={{ ...modernInputStyle, width: '60px', padding: '4px 8px' }} />
+                  </td>
+                  <td style={tdStyle}>
+                    <input type="number" min="0" max="50" value={st.prog} onChange={(e) => handleScoreChange(st.id, 'prog', e.target.value)} style={{ ...modernInputStyle, width: '60px', padding: '4px 8px' }} />
+                  </td>
                   <td style={tdStyle}><span style={{ color: '#4ade80', fontWeight: 'bold' }}>{st.total}</span></td>
                   <td style={tdStyle}><code style={{ background: '#1e293b', color: '#38bdf8', padding: '4px 8px', borderRadius: '4px', fontSize: '0.85rem' }}>{st.token}</code></td>
                   <td style={tdStyle}>
                     <span style={{ color: st.completed ? '#4ade80' : '#facc15', fontSize: '0.8rem', fontWeight: 'bold' }}>
                       {st.completed ? 'COMPLETED' : 'PENDING'}
                     </span>
+                  </td>
+                  <td style={tdStyle}>
+                    <button onClick={() => toggleSubmitStatus(st.id)} style={{ padding: '6px 12px', background: st.completed ? '#dc2626' : '#16a34a', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 'bold', cursor: 'pointer' }}>
+                      {st.completed ? 'Reopen Exam' : 'Submit Paper'}
+                    </button>
                   </td>
                 </tr>
               ))}
