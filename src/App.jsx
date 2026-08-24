@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import questionsData from './data/questions.json';
-import logoImg from './assets/YCB.jpg'; 
+import logoImg from './assets/ycb.jpg'; 
 
 const adminUsername = import.meta.env.VITE_ADMIN_USER;
 const adminPassword = import.meta.env.VITE_ADMIN_PASS;
