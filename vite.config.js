@@ -3,6 +3,6 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig({
   plugins: [react()],
-  base: process.env.RENDER ? '/' : '/yaysib-exam-portal/'
+  base: process.env.RENDER ? '/' : '/yaysib-exam-portal/',
+  assetsInclude: ['**/*.JPG', '**/*.jpg', '**/*.PNG', '**/*.png']
 });
- 
