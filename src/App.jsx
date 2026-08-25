@@ -59,7 +59,6 @@ export default function App() {
     localStorage.setItem('yaysib_roster', JSON.stringify(registeredResults));
   }, [registeredResults]);
 
-  // Handle navigation and require re-authentication for Admin view when moving away
   const handleNavClick = (targetView) => {
     if (view === 'admin' && targetView !== 'admin') {
       setIsAdminAuthenticated(false);
@@ -138,10 +137,14 @@ export default function App() {
 
     const projectScore = 0; 
     const totalScore = managementScore + programmingScore + projectScore;
-    const generatedToken = 'TK-' + Math.floor(1000 + Math.random() * 9000);
+    
+    // Maintain existing token or generate one if not present
+    const cleanID = student.idNumber.trim().toUpperCase();
+    const existingCandidate = registeredResults.find(r => r.id === cleanID);
+    const generatedToken = existingCandidate?.token || ('TK-' + Math.floor(1000 + Math.random() * 9000));
 
     const record = {
-      id: student.idNumber.trim().toUpperCase(),
+      id: cleanID,
       name: student.fullName.trim(),
       mgmt: managementScore,
       prog: programmingScore,
@@ -153,18 +156,19 @@ export default function App() {
 
     setRegisteredResults((prev) => [...prev.filter(r => r.id !== record.id), record]);
     setView('login');
-    alert(`Exam Submitted (${reason})\n\nCandidate: ${record.name}\nTotal Score: ${totalScore}/100\nToken: ${generatedToken}`);
+    // Token is hidden from candidate alert message
+    alert(`Examination Submitted Successfully (${reason}).\n\nPlease contact the administrator to retrieve your result access token.`);
   };
 
- const handleAdminLogin = (e) => {
-  e.preventDefault();
-  if (adminCreds.username === adminUsername && adminCreds.password === adminPassword) {
-    setIsAdminAuthenticated(true);
-    setAdminError('');
-  } else {
-    setAdminError('Invalid Credentials.');
-  }
-};
+  const handleAdminLogin = (e) => {
+    e.preventDefault();
+    if (adminCreds.username === adminUsername && adminCreds.password === adminPassword) {
+      setIsAdminAuthenticated(true);
+      setAdminError('');
+    } else {
+      setAdminError('Invalid Credentials.');
+    }
+  };
 
   const handleVerifyResult = (e) => {
     e.preventDefault();
@@ -387,7 +391,6 @@ export default function App() {
               padding: '30px 40px',
               position: 'relative'
             }}>
-              {/* Top Margin Watermark Edge Text */}
               <div style={{
                 position: 'absolute',
                 top: '8px',
@@ -400,7 +403,6 @@ export default function App() {
                 Evidence of my exams by zayd but not the final record for assessment
               </div>
 
-              {/* Bottom Margin Watermark Edge Text */}
               <div style={{
                 position: 'absolute',
                 bottom: '8px',
@@ -413,7 +415,6 @@ export default function App() {
                 Evidence of my exams by zayd but not the final record for assessment
               </div>
 
-              {/* Header with Logo */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '20px', marginBottom: '10px' }}>
                 <img src={logoImg} alt="YAYSIB Logo" style={{ height: '75px', width: 'auto' }} />
                 <div style={{ textAlign: 'center' }}>
@@ -439,7 +440,6 @@ export default function App() {
                 </h3>
               </div>
 
-              {/* Candidate Info Grid */}
               <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 0.8fr', gap: '8px', fontSize: '12px', fontWeight: 'bold', marginBottom: '15px' }}>
                 <div>NAME OF CANDIDATE: <span style={{ fontWeight: 'normal' }}>{unlockedResult.name.toUpperCase()}</span></div>
                 <div>NUMBER: <span style={{ fontWeight: 'normal' }}>{unlockedResult.id}</span></div>
@@ -451,7 +451,6 @@ export default function App() {
                 <div>August, 2026</div>
               </div>
 
-              {/* Subject Grade Table */}
               <table style={{ width: '100%', borderCollapse: 'collapse', border: '1.5px solid #000000', marginBottom: '20px', fontSize: '12px' }}>
                 <thead>
                   <tr style={{ borderBottom: '1.5px solid #000000', background: '#fef3c7' }}>
@@ -484,7 +483,6 @@ export default function App() {
                 A=80-100, B=70-79, C=60-69, D=50-59, E=40-49, F=Below 40
               </div>
 
-              {/* Signature & Stamp Area */}
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '40px', paddingRight: '20px' }}>
                 <div style={{ textAlign: 'center', width: '220px' }}>
                   <div style={{ borderTop: '1px solid #000000', paddingTop: '5px', fontSize: '12px', fontWeight: 'bold' }}>
