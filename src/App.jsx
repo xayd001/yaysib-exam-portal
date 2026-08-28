@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { db, ref, set, onValue } from './firebase';
 import questionsData from './data/questions.json';
 import logoImg from './assets/YCB.JPG'; 
 
@@ -43,7 +44,7 @@ export default function App() {
   const [unlockedResult, setUnlockedResult] = useState(null);
   const [resultError, setResultError] = useState('');
 
-  // Roster Data with LocalStorage Persistence
+  // Roster Data with LocalStorage & Firebase Fallback
   const [registeredResults, setRegisteredResults] = useState(() => {
     const saved = localStorage.getItem('yaysib_roster');
     if (saved) {
@@ -55,9 +56,36 @@ export default function App() {
     ];
   });
 
+  // FIREBASE AUTO-SYNC & REAL-TIME LISTENER HOOK
   useEffect(() => {
-    localStorage.setItem('yaysib_roster', JSON.stringify(registeredResults));
-  }, [registeredResults]);
+    // 1. Silent sync: push local student results from phone storage to Firebase
+    const localRoster = localStorage.getItem('yaysib_roster');
+    if (localRoster) {
+      try {
+        const parsed = JSON.parse(localRoster);
+        parsed.forEach((candidate) => {
+          if (candidate.completed && candidate.id) {
+            set(ref(db, `results/${candidate.id}`), candidate);
+          }
+        });
+      } catch (e) {
+        console.error("Local sync error:", e);
+      }
+    }
+
+    // 2. Real-time stream to update roster live across devices
+    const resultsRef = ref(db, 'results/');
+    const unsubscribe = onValue(resultsRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        const liveList = Object.values(data);
+        setRegisteredResults(liveList);
+        localStorage.setItem('yaysib_roster', JSON.stringify(liveList));
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   const handleNavClick = (targetView) => {
     if (view === 'admin' && targetView !== 'admin') {
@@ -138,7 +166,6 @@ export default function App() {
     const projectScore = 0; 
     const totalScore = managementScore + programmingScore + projectScore;
     
-    // Maintain existing token or generate one if not present
     const cleanID = student.idNumber.trim().toUpperCase();
     const existingCandidate = registeredResults.find(r => r.id === cleanID);
     const generatedToken = existingCandidate?.token || ('TK-' + Math.floor(1000 + Math.random() * 9000));
@@ -154,9 +181,10 @@ export default function App() {
       completed: true
     };
 
-    setRegisteredResults((prev) => [...prev.filter(r => r.id !== record.id), record]);
+    // Save to Firebase Realtime Database
+    set(ref(db, `results/${record.id}`), record);
+
     setView('login');
-    // Token is hidden from candidate alert message
     alert(`Examination Submitted Successfully (${reason}).\n\nPlease contact the administrator to retrieve your result access token.`);
   };
 
@@ -518,7 +546,7 @@ export default function App() {
               </form>
             </div>
           ) : (
-            <AdminPanel registeredResults={registeredResults} setRegisteredResults={setRegisteredResults} />
+            <AdminPanel registeredResults={registeredResults} />
           )}
         </div>
       )}
@@ -526,7 +554,7 @@ export default function App() {
   );
 }
 
-function AdminPanel({ registeredResults, setRegisteredResults }) {
+function AdminPanel({ registeredResults }) {
   const [newStudent, setNewStudent] = useState({ name: '', id: '' });
 
   const handleAddStudent = (e) => {
@@ -550,28 +578,31 @@ function AdminPanel({ registeredResults, setRegisteredResults }) {
       completed: false
     };
 
-    setRegisteredResults((prev) => [...prev, candidateRecord]);
+    // Save newly pre-registered candidate to Firebase
+    set(ref(db, `results/${candidateRecord.id}`), candidateRecord);
     setNewStudent({ name: '', id: '' });
   };
 
   const handleScoreChange = (id, field, val) => {
     const numVal = Math.min(50, Math.max(0, Number(val) || 0));
-    setRegisteredResults((prev) =>
-      prev.map((st) => {
-        if (st.id === id) {
-          const updated = { ...st, [field]: numVal };
-          updated.total = updated.mgmt + updated.prog + updated.project;
-          return updated;
-        }
-        return st;
-      })
-    );
+    const target = registeredResults.find(st => st.id === id);
+    if (!target) return;
+
+    const updated = { ...target, [field]: numVal };
+    updated.total = updated.mgmt + updated.prog + updated.project;
+
+    // Direct update to Firebase Database
+    set(ref(db, `results/${id}`), updated);
   };
 
   const toggleSubmitStatus = (id) => {
-    setRegisteredResults((prev) =>
-      prev.map((st) => (st.id === id ? { ...st, completed: !st.completed } : st))
-    );
+    const target = registeredResults.find(st => st.id === id);
+    if (!target) return;
+
+    const updated = { ...target, completed: !target.completed };
+
+    // Push status toggle to Firebase
+    set(ref(db, `results/${id}`), updated);
   };
 
   const exportToExcel = () => {
