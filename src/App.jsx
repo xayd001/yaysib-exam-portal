@@ -58,7 +58,6 @@ export default function App() {
 
   // FIREBASE AUTO-SYNC & REAL-TIME LISTENER HOOK
   useEffect(() => {
-    // 1. Silent sync: push local student results from phone storage to Firebase
     const localRoster = localStorage.getItem('yaysib_roster');
     if (localRoster) {
       try {
@@ -73,7 +72,6 @@ export default function App() {
       }
     }
 
-    // 2. Real-time stream to update roster live across devices
     const resultsRef = ref(db, 'results/');
     const unsubscribe = onValue(resultsRef, (snapshot) => {
       const data = snapshot.val();
@@ -146,22 +144,39 @@ export default function App() {
     if (examSubmitted) return;
     setExamSubmitted(true);
 
-    let managementScore = 0;
-    let programmingScore = 0;
+    let mgmtEarnedPoints = 0;
+    let mgmtMaxPossiblePoints = 0;
+
+    let progEarnedPoints = 0;
+    let progMaxPossiblePoints = 0;
 
     shuffledQuestions.forEach((q) => {
       const studentAns = answers[q.id];
       const correctAns = q.correctAnswer || q.answer;
       const sectionName = q.section;
+      const questionWeight = 2; // Each question contributes 2 raw points
 
-      if (studentAns === correctAns) {
-        if (sectionName === "Access Management" || sectionName === "Management") {
-          managementScore += 2;
-        } else if (sectionName === "Access Programming" || sectionName === "Programming") {
-          programmingScore += 2;
+      if (sectionName === "Access Management" || sectionName === "Management") {
+        mgmtMaxPossiblePoints += questionWeight;
+        if (studentAns === correctAns) {
+          mgmtEarnedPoints += questionWeight;
+        }
+      } else if (sectionName === "Access Programming" || sectionName === "Programming") {
+        progMaxPossiblePoints += questionWeight;
+        if (studentAns === correctAns) {
+          progEarnedPoints += questionWeight;
         }
       }
     });
+
+    // Option B: Scale score to a max of 50 points per section
+    const managementScore = mgmtMaxPossiblePoints > 0 
+      ? Math.round((mgmtEarnedPoints / mgmtMaxPossiblePoints) * 50) 
+      : 0;
+
+    const programmingScore = progMaxPossiblePoints > 0 
+      ? Math.round((progEarnedPoints / progMaxPossiblePoints) * 50) 
+      : 0;
 
     const projectScore = 0; 
     const totalScore = managementScore + programmingScore + projectScore;
@@ -181,7 +196,6 @@ export default function App() {
       completed: true
     };
 
-    // Save to Firebase Realtime Database
     set(ref(db, `results/${record.id}`), record);
 
     setView('login');
@@ -409,7 +423,7 @@ export default function App() {
             )}
           </div>
 
-          {/* PRINTABLE YELLOW STATEMENT OF RESULT TEMPLATE */}
+          {/* PRINTABLE STATEMENT OF RESULT */}
           {unlockedResult && (
             <div id="printable-result-sheet" style={{
               display: 'none',
@@ -557,6 +571,36 @@ export default function App() {
 function AdminPanel({ registeredResults }) {
   const [newStudent, setNewStudent] = useState({ name: '', id: '' });
 
+  // One-time cleanup script to adjust existing raw scores (>50) down to a max of 50
+  const handleFixExistingScores = () => {
+    let updatedCount = 0;
+    registeredResults.forEach((student) => {
+      const needsFix = student.mgmt > 50 || student.prog > 50;
+      if (needsFix) {
+        // Assuming raw max was 100 per section
+        const scaledMgmt = student.mgmt > 50 ? Math.round((student.mgmt / 100) * 50) : student.mgmt;
+        const scaledProg = student.prog > 50 ? Math.round((student.prog / 100) * 50) : student.prog;
+        const updatedTotal = scaledMgmt + scaledProg + (student.project || 0);
+
+        const updatedStudent = {
+          ...student,
+          mgmt: scaledMgmt,
+          prog: scaledProg,
+          total: updatedTotal
+        };
+
+        set(ref(db, `results/${student.id}`), updatedStudent);
+        updatedCount++;
+      }
+    });
+
+    if (updatedCount > 0) {
+      alert(`Success: Recalculated ${updatedCount} student record(s) in Firebase!`);
+    } else {
+      alert("No candidate scores exceed 50. All records are already up to date.");
+    }
+  };
+
   const handleAddStudent = (e) => {
     e.preventDefault();
     const cleanID = newStudent.id.trim().toUpperCase();
@@ -578,7 +622,6 @@ function AdminPanel({ registeredResults }) {
       completed: false
     };
 
-    // Save newly pre-registered candidate to Firebase
     set(ref(db, `results/${candidateRecord.id}`), candidateRecord);
     setNewStudent({ name: '', id: '' });
   };
@@ -589,9 +632,8 @@ function AdminPanel({ registeredResults }) {
     if (!target) return;
 
     const updated = { ...target, [field]: numVal };
-    updated.total = updated.mgmt + updated.prog + updated.project;
+    updated.total = updated.mgmt + updated.prog + (updated.project || 0);
 
-    // Direct update to Firebase Database
     set(ref(db, `results/${id}`), updated);
   };
 
@@ -600,15 +642,13 @@ function AdminPanel({ registeredResults }) {
     if (!target) return;
 
     const updated = { ...target, completed: !target.completed };
-
-    // Push status toggle to Firebase
     set(ref(db, `results/${id}`), updated);
   };
 
   const exportToExcel = () => {
     let csvContent = "data:text/csv;charset=utf-8,Student ID,Full Name,Access Mgmt (50),Access Prog (50),Projects (0),Total Score (100),Result Token,Status\n";
     registeredResults.forEach(s => {
-      csvContent += `"${s.id}","${s.name}",${s.mgmt},${s.prog},${s.project},${s.total},"${s.token}","${s.completed ? 'Completed' : 'Pending'}"\n`;
+      csvContent += `"${s.id}","${s.name}",${s.mgmt},${s.prog},${s.project || 0},${s.total},"${s.token}","${s.completed ? 'Completed' : 'Pending'}"\n`;
     });
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
@@ -627,9 +667,14 @@ function AdminPanel({ registeredResults }) {
             <h2 style={{ margin: 0, color: '#f8fafc' }}>Admin Control & Student Roster</h2>
             <p style={{ margin: 0, color: '#94a3b8', fontSize: '0.85rem' }}>Register candidates, modify marks, submit exams, and grant result access.</p>
           </div>
-          <button onClick={exportToExcel} style={{ ...primaryBtnStyle, background: '#2563eb', padding: '10px 18px', width: 'auto' }}>
-            📊 Export CSV / Excel
-          </button>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button onClick={handleFixExistingScores} style={{ ...primaryBtnStyle, background: '#d97706', padding: '10px 14px', width: 'auto' }}>
+              ⚡ Recalculate Exceeded Scores
+            </button>
+            <button onClick={exportToExcel} style={{ ...primaryBtnStyle, background: '#2563eb', padding: '10px 18px', width: 'auto' }}>
+              📊 Export CSV / Excel
+            </button>
+          </div>
         </div>
 
         <form onSubmit={handleAddStudent} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '12px', marginBottom: '24px', background: '#0f172a', padding: '16px', borderRadius: '10px', border: '1px solid #1e293b' }}>
